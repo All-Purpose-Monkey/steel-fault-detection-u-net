@@ -200,7 +200,7 @@ def focal_loss(gamma=2.0, alpha=0.25):
 
     return loss
 
-def combined_loss(num_classes):
+def combined_loss(num_classes=4):
     fl = focal_loss(gamma=2.0, alpha=0.25)
     dl = dice_loss_per_class(num_classes)
 
