@@ -47,12 +47,12 @@ class SteelDataset(tf.keras.utils.Sequence):
         self.image_size = image_size
         self.shuffle = shuffle
         self.indexes = np.arange(len(data))
-        self.on_epoch_end()
 
     def __len__(self):
-        return len(self.data) // self.batch_size
+        return int(np.ceil(len(self.data) / self.batch_size))
 
     def on_epoch_end(self):
+        self.indexes = np.arange(len(self.data))
         if self.shuffle:
             np.random.shuffle(self.indexes)
 
@@ -76,7 +76,7 @@ class SteelDataset(tf.keras.utils.Sequence):
             if mask.ndim == 2:
                 mask = np.expand_dims(mask, axis=-1)
 
-            # augmentation only during training (shuffle=True)
+            # augmentation only in training
             if self.shuffle:
                 img, mask = augment(img, mask)
 
@@ -149,59 +149,73 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
 # =========================================================
 # LOSS + METRIC
 # =========================================================
-def dice_coef(y_true, y_pred, smooth=1e-6):
-    """
-    Global Dice over all classes and pixels
-    """
+def dice_coef(y_true, y_pred, smooth=1):
     y_pred = tf.nn.sigmoid(y_pred)
-
     y_true = tf.cast(y_true, tf.float32)
 
     y_true_f = tf.reshape(y_true, [-1])
     y_pred_f = tf.reshape(y_pred, [-1])
 
     intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    denom = tf.reduce_sum(y_true_f, axis=0) + tf.reduce_sum(y_pred_f, axis=0)
 
-    return (2. * intersection + smooth) / (
-        tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth
-    )
+    return (2. * intersection + smooth) / (denom + smooth)
 
 
-def dice_loss_per_class(num_classes):
+
+def dice_class(index, smooth=1):
+    def metric(y_true, y_pred):
+        y_pred = tf.nn.sigmoid(y_pred)
+        y_true = tf.cast(y_true, tf.float32)
+
+        y_true_c = y_true[..., index]
+        y_pred_c = y_pred[..., index]
+
+        y_true_f = tf.reshape(y_true_c, [-1])
+        y_pred_f = tf.reshape(y_pred_c, [-1])
+
+        intersection = tf.reduce_sum(y_true_f * y_pred_f)
+
+        return (2. * intersection + smooth) / (
+            tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth
+        )
+
+    metric.__name__ = f"dice_class_{index}"
+    return metric
+
+def dice_loss_per_class(num_classes, smooth=1):
     def loss(y_true, y_pred):
-        dice_scores = []
+        y_pred = tf.nn.sigmoid(y_pred)
+        y_true = tf.cast(y_true, tf.float32)
 
-        for c in range(num_classes):
-            dice_fn = dice_class(c)
-            dice_scores.append(dice_fn(y_true, y_pred))
+        y_true_f = tf.reshape(y_true, [-1, num_classes])
+        y_pred_f = tf.reshape(y_pred, [-1, num_classes])
 
-        dice_scores = tf.stack(dice_scores)
-        mean_dice = tf.reduce_mean(dice_scores)
+        intersection = tf.reduce_sum(y_true_f * y_pred_f, axis=0)
+        denom = tf.reduce_sum(y_true_f, axis=0) + tf.reduce_sum(y_pred_f, axis=0)
 
-        return 1 - mean_dice
+        dice = (2. * intersection + smooth) / (denom + smooth)
+
+        return 1 - tf.reduce_mean(dice) #typical DSL gets easily dominated by performance for one class - mean is a simpler way to make sure trining is not over dominated and model has to improve on all front to progress through training
 
     return loss
 
-def focal_loss(gamma=2.0, alpha=0.25):
+def focal_loss(gamma=2.0, alpha=0.5): #tested it for 5 epochs before calling it in on these settings - keeping as an artefact of a undocumented run
     def loss(y_true, y_pred):
-        y_pred = tf.nn.sigmoid(y_pred)
-
         y_true = tf.cast(y_true, tf.float32)
 
-        epsilon = 1e-7
-        y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+        cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=y_true, logits=y_pred
+        )
 
-        cross_entropy = - (y_true * tf.math.log(y_pred) +
-                           (1 - y_true) * tf.math.log(1 - y_pred))
-
-        weight = alpha * tf.pow(1 - y_pred, gamma)
-
+        p = tf.nn.sigmoid(y_pred)
+        weight = alpha * tf.pow(1 - p, gamma)
         return tf.reduce_mean(weight * cross_entropy)
 
     return loss
 
 def combined_loss(num_classes=4):
-    fl = focal_loss(gamma=2.0, alpha=0.25)
+    fl = focal_loss(gamma=1.0, alpha=0.75) #tuned to be less aggressive on hard examples and more on foreground predictions
     dl = dice_loss_per_class(num_classes)
 
     def loss(y_true, y_pred):
@@ -235,13 +249,15 @@ model = build_unet()
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(5e-4),
-    loss=combined_loss,
+    loss=combined_loss(),
     metrics=[
         dice_coef,
         dice_class(0),
         dice_class(1),
         dice_class(2),
         dice_class(3),
+        
+
     ]
 )
 
@@ -281,14 +297,14 @@ if __name__ == "__main__":
     # -------------------------
     # SAVE MODEL
     # -------------------------
-    model.save("steel_unet8_5_model.keras")
-    model.save_weights("steel_unet8_5_weights.weights.h5")
+    model.save("steel_unet8_5_mdl_model.keras")
+    model.save_weights("steel_unet8_5_mdl_weights.weights.h5")
 
     print("\n✅ Model saved successfully!")
 
     # Save history to CSV in root directory
     history_df = pd.DataFrame(history.history)
-    history_df.to_csv("unet8_5_training_history.csv", index=False)
+    history_df.to_csv("unet8_5_mdl_training_history.csv", index=False)
 
     plt.plot(history.history["dice_coef"])
     plt.plot(history.history["val_dice_coef"])
