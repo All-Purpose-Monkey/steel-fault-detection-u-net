@@ -200,28 +200,28 @@ def dice_loss_per_class(num_classes, smooth=1):
 
     return loss
 
-def focal_loss(gamma=2.0, alpha=0.5): #tested it for 5 epochs before calling it in on these settings - keeping as an artefact of a undocumented run
-    def loss(y_true, y_pred):
-        y_true = tf.cast(y_true, tf.float32)
+# def focal_loss(gamma=2.0, alpha=0.5): #tested it for 5 epochs before calling it in on these settings - keeping as an artefact of a undocumented run
+#     def loss(y_true, y_pred):
+#         y_true = tf.cast(y_true, tf.float32)
 
-        cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(
-            labels=y_true, logits=y_pred
-        )
+#         cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(
+#             labels=y_true, logits=y_pred
+#         )
 
-        p = tf.nn.sigmoid(y_pred)
-        weight = alpha * tf.pow(1 - p, gamma)
-        return tf.reduce_mean(weight * cross_entropy)
+#         p = tf.nn.sigmoid(y_pred)
+#         weight = alpha * tf.pow(1 - p, gamma)
+#         return tf.reduce_mean(weight * cross_entropy)
 
-    return loss
+#     return loss
 
-def combined_loss(num_classes=4):
-    fl = focal_loss(gamma=1.0, alpha=0.75) #tuned to be less aggressive on hard examples and more on foreground predictions
-    dl = dice_loss_per_class(num_classes)
+# def combined_loss(num_classes=4):
+#     fl = focal_loss(gamma=1.0, alpha=0.75) #tuned to be less aggressive on hard examples and more on foreground predictions
+#     dl = dice_loss_per_class(num_classes)
 
-    def loss(y_true, y_pred):
-        return fl(y_true, y_pred) + dl(y_true, y_pred)
+#     def loss(y_true, y_pred):
+#         return fl(y_true, y_pred) + dl(y_true, y_pred)
 
-    return loss
+#     return loss
 
 
 # =========================================================
@@ -249,7 +249,7 @@ model = build_unet()
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(5e-4),
-    loss=combined_loss(),
+    loss=dice_loss_per_class(num_classes=4),
     metrics=[
         dice_coef,
         dice_class(0),
