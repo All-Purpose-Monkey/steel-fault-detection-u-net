@@ -107,15 +107,15 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
     
     def decoder_block(inputs, skip_features, num_filters):
 
-        x = tf.keras.layers.Conv2DTranspose(num_filters, (2, 2), strides=2, padding='valid')(inputs)
+        x = tf.keras.layers.Conv2DTranspose(num_filters, (2, 2), strides=2, padding='same')(inputs)
 
         skip_features = tf.keras.layers.Resizing(x.shape[1], x.shape[2])(skip_features)
 
         x = tf.keras.layers.Concatenate()([x, skip_features])
 
-        x = tf.keras.layers.Conv2D(num_filters, 3, padding='valid')(x)
+        x = tf.keras.layers.Conv2D(num_filters, 3, padding='same')(x)
         x = tf.keras.layers.Activation('relu')(x)
-        x = tf.keras.layers.Conv2D(num_filters, 3, padding='valid')(x)
+        x = tf.keras.layers.Conv2D(num_filters, 3, padding='same')(x)
         x = tf.keras.layers.Activation('relu')(x)
 
         return x
@@ -128,9 +128,9 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
     c5 = encoder_block(c4, 128)
 
     #bottleneck
-    b1 = tf.keras.layers.Conv2D(256, 3, padding='valid')(c4)
+    b1 = tf.keras.layers.Conv2D(256, 3, padding='same')(c5)
     b1 = tf.keras.layers.Activation('relu')(b1)
-    b1 = tf.keras.layers.Conv2D(256, 3, padding='valid')(b1)
+    b1 = tf.keras.layers.Conv2D(256, 3, padding='same')(b1)
     b1 = tf.keras.layers.Activation('relu')(b1)
 
     #decoder
@@ -149,8 +149,13 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
 # =========================================================
 # LOSS + METRIC
 # =========================================================
-def dice_coef(y_true, y_pred, smooth=1):
+def dice_coef(y_true, y_pred, smooth=1e-6):
+    """
+    Global Dice over all classes and pixels
+    """
     y_pred = tf.nn.sigmoid(y_pred)
+
+    y_true = tf.cast(y_true, tf.float32)
 
     y_true_f = tf.reshape(y_true, [-1])
     y_pred_f = tf.reshape(y_pred, [-1])
@@ -166,9 +171,49 @@ def dice_loss(y_true, y_pred):
     return 1 - dice_coef(y_true, y_pred)
 
 
+def dice_class(index, smooth=1e-6):
+    """
+    Dice for a specific class index
+    """
+    def metric(y_true, y_pred):
+        y_pred_sig = tf.nn.sigmoid(y_pred)
+        y_true_c = tf.cast(y_true[..., index], tf.float32)
+        y_pred_c = y_pred_sig[..., index]
+
+        y_true_f = tf.reshape(y_true_c, [-1])
+        y_pred_f = tf.reshape(y_pred_c, [-1])
+
+        intersection = tf.reduce_sum(y_true_f * y_pred_f)
+
+        return (2. * intersection + smooth) / (
+            tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth
+        )
+
+    metric.__name__ = f"dice_class_{index}"
+    return metric
+
+def focal_loss(gamma=2.0, alpha=0.25):
+    def loss(y_true, y_pred):
+        y_pred = tf.nn.sigmoid(y_pred)
+
+        y_true = tf.cast(y_true, tf.float32)
+
+        epsilon = 1e-7
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+
+        cross_entropy = - (y_true * tf.math.log(y_pred) +
+                           (1 - y_true) * tf.math.log(1 - y_pred))
+
+        weight = alpha * tf.pow(1 - y_pred, gamma)
+
+        return tf.reduce_mean(weight * cross_entropy)
+
+    return loss
+
 def combined_loss(y_true, y_pred):
-    bce = tf.keras.losses.binary_crossentropy(y_true, y_pred, from_logits=True)
-    return bce + dice_loss(y_true, y_pred)
+    fl = focal_loss(gamma=2.0, alpha=0.5)
+
+    return fl(y_true, y_pred) + dice_loss(y_true, y_pred)
 
 
 # =========================================================
@@ -197,7 +242,13 @@ model = build_unet()
 model.compile(
     optimizer=tf.keras.optimizers.Adam(5e-4),
     loss=combined_loss,
-    metrics=[dice_coef]
+    metrics=[
+        dice_coef,
+        dice_class(0),
+        dice_class(1),
+        dice_class(2),
+        dice_class(3),
+    ]
 )
 
 
@@ -236,17 +287,17 @@ if __name__ == "__main__":
     # -------------------------
     # SAVE MODEL
     # -------------------------
-    model.save("steel_unet_model.keras")
-    model.save_weights("steel_unet_weights.weights.h5")
+    model.save("steel_unet8_5_model.keras")
+    model.save_weights("steel_unet8_5_weights.weights.h5")
 
     print("\n✅ Model saved successfully!")
 
     # Save history to CSV in root directory
     history_df = pd.DataFrame(history.history)
-    history_df.to_csv("training_history.csv", index=False)
+    history_df.to_csv("unet8_5_training_history.csv", index=False)
 
-    plt.plot(history.history["dice_coefficient"])
-    plt.plot(history.history["val_dice_coefficient"])
+    plt.plot(history.history["dice_coef"])
+    plt.plot(history.history["val_dice_coef"])
     plt.title("Dice Score")
     plt.legend(["Train", "Val"])
     plt.show()
