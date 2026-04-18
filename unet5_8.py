@@ -167,30 +167,20 @@ def dice_coef(y_true, y_pred, smooth=1e-6):
     )
 
 
-def dice_loss(y_true, y_pred):
-    return 1 - dice_coef(y_true, y_pred)
+def dice_loss_per_class(num_classes):
+    def loss(y_true, y_pred):
+        dice_scores = []
 
+        for c in range(num_classes):
+            dice_fn = dice_class(c)
+            dice_scores.append(dice_fn(y_true, y_pred))
 
-def dice_class(index, smooth=1e-6):
-    """
-    Dice for a specific class index
-    """
-    def metric(y_true, y_pred):
-        y_pred_sig = tf.nn.sigmoid(y_pred)
-        y_true_c = tf.cast(y_true[..., index], tf.float32)
-        y_pred_c = y_pred_sig[..., index]
+        dice_scores = tf.stack(dice_scores)
+        mean_dice = tf.reduce_mean(dice_scores)
 
-        y_true_f = tf.reshape(y_true_c, [-1])
-        y_pred_f = tf.reshape(y_pred_c, [-1])
+        return 1 - mean_dice
 
-        intersection = tf.reduce_sum(y_true_f * y_pred_f)
-
-        return (2. * intersection + smooth) / (
-            tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth
-        )
-
-    metric.__name__ = f"dice_class_{index}"
-    return metric
+    return loss
 
 def focal_loss(gamma=2.0, alpha=0.25):
     def loss(y_true, y_pred):
@@ -210,10 +200,14 @@ def focal_loss(gamma=2.0, alpha=0.25):
 
     return loss
 
-def combined_loss(y_true, y_pred):
-    fl = focal_loss(gamma=2.0, alpha=0.5)
+def combined_loss(num_classes):
+    fl = focal_loss(gamma=2.0, alpha=0.25)
+    dl = dice_loss_per_class(num_classes)
 
-    return fl(y_true, y_pred) + dice_loss(y_true, y_pred)
+    def loss(y_true, y_pred):
+        return fl(y_true, y_pred) + dl(y_true, y_pred)
+
+    return loss
 
 
 # =========================================================
