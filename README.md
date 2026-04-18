@@ -3,7 +3,7 @@
 My attempt at an old kaggle competition to get more perspective into encoding and multi-label detection! Firstly shoutout to these people and the resourses they created which taught me a lot:
 
 1. https://www.geeksforgeeks.org/machine-learning/u-net-architecture-explained/
-2. https://www.kaggle.com/code/amanooo/defect-detection-starter-u-net
+2. https://www.kaggle.com/code/amanooo/defect-detection-starter-u-net - best EDA on the dataset if you want to get started on learning about the problem
 3. https://www.kaggle.com/code/liyufeng816/notebook-lyf
 4. https://www.sciencedirect.com/science/article/pii/S259012302500060X
 
