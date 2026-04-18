@@ -230,8 +230,8 @@ if __name__ == "__main__":
     history_df = pd.DataFrame(history.history)
     history_df.to_csv("training_history.csv", index=False)
 
-    plt.plot(history.history["dice_coefficient"])
-    plt.plot(history.history["val_dice_coefficient"])
+    plt.plot(history.history["dice_coef"])
+    plt.plot(history.history["val_dice_coef"])
     plt.title("Dice Score")
     plt.legend(["Train", "Val"])
     plt.show()
