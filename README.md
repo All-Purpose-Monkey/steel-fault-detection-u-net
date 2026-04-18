@@ -10,7 +10,8 @@ My attempt at an old kaggle competition to get more perspective into encoding an
 I have tried to combine these archetictures and give my own twist on it by:
 1. making it light enough to train on an M1 (over 8 hours)
 2. Image pre-processing to improve performance (tried couple of suggestions from forums, settled with light and noise distortion during training for generalisational ability), ,
-3. and used a combined loss function than the vanilla BCEloss implementation.
+3. and used a combined loss function than the vanilla BCEloss implementation (the combined loss in un5_8 is far superior in tackling class imblanaces in learning, but kept the older un4_16 setup as an archieve)
+4. a split dice coef calculation and tracking for better visibility on training
 
-There were couple of attempts at training and I have maintainted training records of each archeticture for clarity and transparency, in case I can save someone a bit of research and training time - cheers! Best model params and weights are there for you to download as checkout.
+There were couple of attempts at training and I have maintainted training records of each archeticture for clarity and transparency, in case I can save someone a bit of research and training time - cheers! All model final params and weights are there for you to download and fiddle.
 
