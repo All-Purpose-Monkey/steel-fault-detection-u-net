@@ -216,22 +216,22 @@ def run_training_pipeline(data, epochs=50, batch_size=8, workers=2):
 # RUN
 # -------------------------
 if __name__ == "__main__":
-    model, history = run_training_pipeline(data)
+    #model, history = run_training_pipeline(data)
 
     # -------------------------
     # SAVE MODEL
     # -------------------------
-    model.save("steel_unet_model.keras")
-    model.save_weights("steel_unet_weights.weights.h5")
+    #model.save("steel_unet_model.keras")
+    #model.save_weights("steel_unet_weights.weights.h5")
 
-    print("\n✅ Model saved successfully!")
+    #print("\n✅ Model saved successfully!")
 
     # Save history to CSV in root directory
-    history_df = pd.DataFrame(history.history)
-    history_df.to_csv("training_history.csv", index=False)
-
-    plt.plot(history.history["dice_coef"])
-    plt.plot(history.history["val_dice_coef"])
+    #history_df = pd.DataFrame(history.history)
+    #history_df.to_csv("unet4_16_training_history.csv", index=False)
+    history = pd.read_csv("unet4_16_training_history.csv")
+    plt.plot(history["dice_coef"])
+    plt.plot(history["val_dice_coef"])
     plt.title("Dice Score")
     plt.legend(["Train", "Val"])
     plt.show()
