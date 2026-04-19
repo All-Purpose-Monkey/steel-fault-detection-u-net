@@ -6,6 +6,7 @@ My attempt at an old kaggle competition to get more perspective into encoding an
 2. https://www.kaggle.com/code/amanooo/defect-detection-starter-u-net - best EDA on the dataset if you want to get started on learning about the problem
 3. https://www.kaggle.com/code/liyufeng816/notebook-lyf
 4. https://www.sciencedirect.com/science/article/pii/S259012302500060X
+5. https://github.com/qubvel-org/segmentation_models.pytorch - another great resource I found later for quick solution for testing and deeper archetictures for segmentation tasks. (if i had a proper GPU the next step would be to compare my perfomrances ith these SOTA segmentors)
 
 I have tried to combine these archetictures and give my own twist on it by:
 1. making it light enough to train on an M1 (over 8 hours)
