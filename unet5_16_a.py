@@ -319,14 +319,14 @@ if __name__ == "__main__":
     # -------------------------
     # SAVE MODEL
     # -------------------------
-    model.save("steel_unet16_5a_gdl_wbce_model.keras")
-    model.save_weights("steel_unet16_5a_gdl_wbce_weights.weights.h5")
+    model.save("steel_unet5_16a_gdl_wbce_model.keras")
+    model.save_weights("steel_unet5_16a_gdl_wbce_weights.weights.h5")
 
     print("\n✅ Model saved successfully!")
 
     # Save history to CSV in root directory
     history_df = pd.DataFrame(history.history)
-    history_df.to_csv("unet16_5a_gdl_wbce_training_history.csv", index=False)
+    history_df.to_csv("unet5_16a_gdl_wbce_training_history.csv", index=False)
 
     plt.plot(history.history["dice_coef"])
     plt.plot(history.history["val_dice_coef"])
