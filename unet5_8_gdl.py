@@ -26,12 +26,13 @@ data = fn.build_training_dataset(train_labels, train_data)
 #reducing augmentation intensity to prevent creating accidental defects and improve generalization - just a hunch tbh
 def augment(img, mask):
     # brightness
-    alpha = np.random.uniform(0.95, 1.05)
+    alpha = np.random.uniform(0.9, 1.1)
     img = img * alpha
 
-    # noise
-    noise = np.random.normal(0, 0.005, img.shape)
-    img = img + noise
+    # contrast stretching
+    p_low, p_high = np.percentile(img, (2, 98))
+    if p_high - p_low > 1e-3:  # prevent division by zero
+        img = (img - p_low) / (p_high - p_low)    
 
     img = np.clip(img, 0, 1)
     return img, mask
@@ -121,7 +122,7 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
         return x
     
     #encoder
-    c1 = encoder_block(inputs, 8)
+    c1 = encoder_block(inputs, 16)
     c2 = encoder_block(c1, 16)
     c3 = encoder_block(c2, 32)
     c4 = encoder_block(c3, 64)
@@ -138,7 +139,7 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
     c7 = decoder_block(c6, c4, 64)
     c8 = decoder_block(c7, c3, 32)
     c9 = decoder_block(c8, c2, 16)
-    c10 = decoder_block(c9, c1, 8)
+    c10 = decoder_block(c9, c1, 16)
 
 
     outputs = tf.keras.layers.Conv2D(num_classes, 1, activation=None)(c10)
@@ -149,7 +150,7 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
 # =========================================================
 # LOSS + METRIC
 # =========================================================
-def dice_coef(y_true, y_pred, smooth=1e-6):
+def dice_coef(y_true, y_pred, smooth=1):
     """
     Global Dice over all classes and pixels
     """
@@ -165,6 +166,7 @@ def dice_coef(y_true, y_pred, smooth=1e-6):
     return (2. * intersection + smooth) / (
         tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth
     )
+
 
 
 def dice_class(index, smooth=1):
@@ -186,7 +188,7 @@ def dice_class(index, smooth=1):
     metric.__name__ = f"dice_class_{index}"
     return metric
 
-def generalized_dice_loss(num_classes, smooth=1e-6):
+def generalized_dice_loss(num_classes, smooth=1, mode="rt",power=0.5):
     def loss(y_true, y_pred):
         y_pred = tf.nn.sigmoid(y_pred)
         y_true = tf.cast(y_true, tf.float32)
@@ -194,10 +196,12 @@ def generalized_dice_loss(num_classes, smooth=1e-6):
         y_true_f = tf.reshape(y_true, [-1, num_classes])
         y_pred_f = tf.reshape(y_pred, [-1, num_classes])
 
-        # class volumes (used for weighting) - did not want to use the pre-determined weights i saw other notebooks use to achieve performance but clearly the way forward in this task as learning had been lopsided till now
+        # class volumes (used for weighting)
         class_sum = tf.reduce_sum(y_true_f, axis=0)
-
-        weights = 1.0 / (class_sum ** 2 + smooth)
+        if mode == "rt":
+            weights = 1.0 / tf.pow(class_sum + smooth, power) #reducing weighting factor by square root to prevent collapse on class 3 which is the main dice coef gainer
+        elif mode == "log":
+            weights = 1.0 / tf.math.log(class_sum + 2.0)
 
         intersection = tf.reduce_sum(y_true_f * y_pred_f, axis=0)
         denom = tf.reduce_sum(y_true_f + y_pred_f, axis=0)
@@ -208,37 +212,47 @@ def generalized_dice_loss(num_classes, smooth=1e-6):
 
     return loss
 
-# def focal_loss(gamma=2.0, alpha=0.5):
-#     def loss(y_true, y_pred):
-#         y_true = tf.cast(y_true, tf.float32)
+def weighted_bce(alpha=0.75):
 
-#         cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(
-#             labels=y_true, logits=y_pred
-#         )
+    def loss(y_true, y_pred):
 
-#         p = tf.nn.sigmoid(y_pred)
-#         weight = alpha * tf.pow(1 - p, gamma)
-#         return tf.reduce_mean(weight * cross_entropy)
+        y_true = tf.cast(y_true, tf.float32)
 
-#     return loss
+        # standard BCE with logits
 
-# def combined_loss(num_classes=4):
-#     fl = focal_loss(gamma=1.0, alpha=0.75)
-#     dl = generalized_dice_loss(num_classes)
+        bce = tf.nn.sigmoid_cross_entropy_with_logits(
 
-#     def loss(y_true, y_pred):
-#         return fl(y_true, y_pred) + dl(y_true, y_pred)
+            labels=y_true,
 
-#     return loss
+            logits=y_pred
+
+        )
+
+        # class weighting
+
+        weights = y_true * alpha + (1.0 - y_true) * (1.0 - alpha)
+
+        return tf.reduce_mean(weights * bce)
+
+    return loss
+
+def combined_loss(num_classes=4):
+    fl = weighted_bce(alpha=0.75)
+    dl = generalized_dice_loss(num_classes=num_classes,mode='rt', power=0.5)
+    def loss(y_true, y_pred):
+        return fl(y_true, y_pred) + dl(y_true, y_pred)
+
+    return loss
 
 
 # =========================================================
 # CALLBACKS
 # =========================================================
 reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-    monitor="val_loss",
+    monitor="dice_coef",
+    mode="max",
     factor=0.5,
-    patience=2,
+    patience=3,
     min_lr=1e-6,
     verbose=1
 )
@@ -256,8 +270,8 @@ early_stop = tf.keras.callbacks.EarlyStopping(
 model = build_unet()
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(5e-4),
-    loss=generalized_dice_loss(num_classes=4),
+    optimizer=tf.keras.optimizers.Adam(1e-3),
+    loss=combined_loss(num_classes=4),
     metrics=[
         dice_coef,
         dice_class(0),
@@ -305,14 +319,14 @@ if __name__ == "__main__":
     # -------------------------
     # SAVE MODEL
     # -------------------------
-    model.save("steel_unet8_5_gdl_model.keras")
-    model.save_weights("steel_unet8_5_gdl_weights.weights.h5")
+    model.save("steel_unet8_5_gdl_wbce_model.keras")
+    model.save_weights("steel_unet8_5_gdl_wbce_weights.weights.h5")
 
     print("\n✅ Model saved successfully!")
 
     # Save history to CSV in root directory
     history_df = pd.DataFrame(history.history)
-    history_df.to_csv("unet8_5_gdl_training_history.csv", index=False)
+    history_df.to_csv("unet8_5_gdl_wbce_training_history.csv", index=False)
 
     plt.plot(history.history["dice_coef"])
     plt.plot(history.history["val_dice_coef"])
