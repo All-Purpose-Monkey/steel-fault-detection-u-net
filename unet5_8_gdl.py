@@ -122,7 +122,7 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
         return x
     
     #encoder
-    c1 = encoder_block(inputs, 16)
+    c1 = encoder_block(inputs, 8)
     c2 = encoder_block(c1, 16)
     c3 = encoder_block(c2, 32)
     c4 = encoder_block(c3, 64)
@@ -139,7 +139,7 @@ def build_unet(input_shape=(256, 1600, 1), num_classes=4):
     c7 = decoder_block(c6, c4, 64)
     c8 = decoder_block(c7, c3, 32)
     c9 = decoder_block(c8, c2, 16)
-    c10 = decoder_block(c9, c1, 16)
+    c10 = decoder_block(c9, c1, 8)
 
 
     outputs = tf.keras.layers.Conv2D(num_classes, 1, activation=None)(c10)
